@@ -1,0 +1,26 @@
+{
+  "name": "a11y-audit-lab",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.x",
+    "react-dom": "^19.x"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.x",
+    "@testing-library/react": "^16.x",
+    "@testing-library/user-event": "^14.x",
+    "@types/react": "^19.x",
+    "@types/react-dom": "^19.x",
+    "@vitest/coverage-v8": "^3.x",
+    "jsdom": "^25.x",
+    "typescript": "^5.x",
+    "vitest": "^3.x"
+  }
+}

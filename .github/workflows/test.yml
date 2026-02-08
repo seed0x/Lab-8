@@ -1,0 +1,602 @@
+name: Lab 5 - Accessibility Audit CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  integrity-check:
+    name: 🔒 Template Integrity Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed to compare against initial commit
+
+      - name: Verify protected files unchanged
+        id: integrity
+        run: |
+          echo "## 🔒 Template Integrity Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          INTEGRITY_OK=true
+
+          # ─────────────────────────────────────────────
+          # Layer 1: SHA-256 checksum verification
+          # ─────────────────────────────────────────────
+          # These checksums are generated at template creation time.
+          # To regenerate, run from the template repo root:
+          #   sha256sum vitest.config.ts tsconfig.json src/setupTests.ts
+          #
+          # ⚠️  INSTRUCTOR: Replace these placeholder values with actual checksums
+          #     before distributing the template. See INSTRUCTOR_SETUP.md for details.
+          # ─────────────────────────────────────────────
+
+          echo "### Checksum Verification (SHA-256)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          declare -A EXPECTED_CHECKSUMS
+          EXPECTED_CHECKSUMS=(
+            ["vitest.config.ts"]="5d5e8122b6f194ca1a24941a5d733c828f4d8cbe51e6f92680139686d3f2cc01"
+            ["tsconfig.json"]="3e8d1142c6e1c174caf48da033978653fd14bf3e8b34683d08331c8e3e027826"
+            ["src/setupTests.ts"]="a46d66851af2c056e805fdd574bf5ec3adb1181c43c5e41f0a1c592e338afe64"
+          )
+
+          CHECKSUM_FAILURES=""
+
+          for file in "${!EXPECTED_CHECKSUMS[@]}"; do
+            expected="${EXPECTED_CHECKSUMS[$file]}"
+
+            if [ ! -f "$file" ]; then
+              echo "❌ \`$file\` — **MISSING** (deleted from template)" >> $GITHUB_STEP_SUMMARY
+              CHECKSUM_FAILURES="$CHECKSUM_FAILURES $file"
+              INTEGRITY_OK=false
+              continue
+            fi
+
+            actual=$(sha256sum "$file" | awk '{print $1}')
+
+            if [ "$expected" = "REPLACE_WITH_ACTUAL_CHECKSUM" ]; then
+              echo "⚠️ \`$file\` — checksum not configured (instructor action needed)" >> $GITHUB_STEP_SUMMARY
+            elif [ "$actual" = "$expected" ]; then
+              echo "✅ \`$file\` — checksum matches" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ \`$file\` — **MODIFIED** (checksum mismatch)" >> $GITHUB_STEP_SUMMARY
+              echo "    Expected: \`${expected:0:16}…\`" >> $GITHUB_STEP_SUMMARY
+              echo "    Actual:   \`${actual:0:16}…\`" >> $GITHUB_STEP_SUMMARY
+              CHECKSUM_FAILURES="$CHECKSUM_FAILURES $file"
+              INTEGRITY_OK=false
+            fi
+          done
+
+          # ─────────────────────────────────────────────
+          # Layer 2: Git history comparison
+          # ─────────────────────────────────────────────
+          # Compare protected files against the initial (root) commit.
+          # GitHub Classroom repos preserve the template's commit history,
+          # so the root commit always contains the original template files.
+          # ─────────────────────────────────────────────
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Git History Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get the root commit (first commit in the repo — the template)
+          ROOT_COMMIT=$(git rev-list --max-parents=0 HEAD | head -1)
+          echo "Template commit: \`${ROOT_COMMIT:0:8}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          PROTECTED_FILES=(
+            "vitest.config.ts"
+            "tsconfig.json"
+            "src/setupTests.ts"
+          )
+
+          GIT_DIFF_FAILURES=""
+
+          for file in "${PROTECTED_FILES[@]}"; do
+            if ! git show "${ROOT_COMMIT}:${file}" &>/dev/null; then
+              echo "⚠️ \`$file\` — not found in template commit (skipping diff)" >> $GITHUB_STEP_SUMMARY
+              continue
+            fi
+
+            if git diff --quiet "$ROOT_COMMIT" -- "$file" 2>/dev/null; then
+              echo "✅ \`$file\` — unchanged from template" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ \`$file\` — **MODIFIED** since template commit" >> $GITHUB_STEP_SUMMARY
+              CHANGED_LINES=$(git diff "$ROOT_COMMIT" -- "$file" | grep -c '^[+-]' || echo "0")
+              echo "    ($CHANGED_LINES lines changed)" >> $GITHUB_STEP_SUMMARY
+              GIT_DIFF_FAILURES="$GIT_DIFF_FAILURES $file"
+              INTEGRITY_OK=false
+            fi
+          done
+
+          # ─────────────────────────────────────────────
+          # Layer 3: Coverage threshold verification
+          # ─────────────────────────────────────────────
+          # Even if the full checksum check isn't configured yet,
+          # specifically verify that coverage thresholds haven't been lowered.
+          # ─────────────────────────────────────────────
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage Threshold Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "vitest.config.ts" ]; then
+            STMT_THRESHOLD=$(grep -oP 'statements:\s*\K\d+' vitest.config.ts || echo "0")
+            BRANCH_THRESHOLD=$(grep -oP 'branches:\s*\K\d+' vitest.config.ts || echo "0")
+            FUNC_THRESHOLD=$(grep -oP 'functions:\s*\K\d+' vitest.config.ts || echo "0")
+            LINE_THRESHOLD=$(grep -oP 'lines:\s*\K\d+' vitest.config.ts || echo "0")
+
+            REQUIRED_THRESHOLD=90
+            THRESHOLD_OK=true
+
+            echo "| Metric | Threshold | Required | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-----------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+            for metric in "statements:$STMT_THRESHOLD" "branches:$BRANCH_THRESHOLD" "functions:$FUNC_THRESHOLD" "lines:$LINE_THRESHOLD"; do
+              name="${metric%%:*}"
+              value="${metric##*:}"
+
+              if [ "$value" -ge "$REQUIRED_THRESHOLD" ] 2>/dev/null; then
+                echo "| $name | ${value}% | ${REQUIRED_THRESHOLD}% | ✅ |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| $name | ${value}% | ${REQUIRED_THRESHOLD}% | ❌ **Lowered** |" >> $GITHUB_STEP_SUMMARY
+                THRESHOLD_OK=false
+                INTEGRITY_OK=false
+              fi
+            done
+
+            if [ "$THRESHOLD_OK" = "true" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "✅ **All coverage thresholds at or above ${REQUIRED_THRESHOLD}%**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "❌ **Coverage thresholds have been lowered below ${REQUIRED_THRESHOLD}%**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ \`vitest.config.ts\` is missing — cannot verify thresholds" >> $GITHUB_STEP_SUMMARY
+            INTEGRITY_OK=false
+          fi
+
+          # ─────────────────────────────────────────────
+          # Summary
+          # ─────────────────────────────────────────────
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$INTEGRITY_OK" = "true" ]; then
+            echo "### ✅ Integrity check passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All template-provided configuration files are unmodified." >> $GITHUB_STEP_SUMMARY
+            echo "integrity_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "### ❌ Integrity check failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "One or more template-provided files have been modified." >> $GITHUB_STEP_SUMMARY
+            echo "These files should not be changed: \`vitest.config.ts\`, \`tsconfig.json\`, \`setupTests.ts\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Restore the original files from the template or contact your instructor.**" >> $GITHUB_STEP_SUMMARY
+            echo "integrity_ok=false" >> $GITHUB_OUTPUT
+
+            # Fail the job so the status is visible on the dashboard
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    needs: integrity-check
+    if: always() # Run even if integrity check fails — students still need test feedback
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  grading-checks:
+    runs-on: ubuntu-latest
+    needs: [integrity-check, test]
+    if: always() # Run even if upstream jobs fail — grading summary is always useful
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check required files exist
+        id: files
+        run: |
+          echo "## 📁 File Check" >> $GITHUB_STEP_SUMMARY
+
+          MISSING_FILES=""
+          REQUIRED_FILES=(
+            "src/components/EventCard.tsx"
+            "src/components/EventFilter.tsx"
+            "src/components/RegistrationForm.tsx"
+            "src/components/EventsPage.tsx"
+            "src/data/events.ts"
+            "src/__tests__/EventCard.test.tsx"
+            "src/__tests__/EventFilter.test.tsx"
+            "src/__tests__/RegistrationForm.test.tsx"
+            "src/__tests__/EventsPage.test.tsx"
+            "src/AUDIT_REPORT.md"
+            "src/setupTests.ts"
+            "vitest.config.ts"
+            "tsconfig.json"
+            "README.md"
+          )
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✅ $file" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ $file (MISSING)" >> $GITHUB_STEP_SUMMARY
+              MISSING_FILES="$MISSING_FILES $file"
+            fi
+          done
+
+          if [ -n "$MISSING_FILES" ]; then
+            echo "files_missing=true" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Some required files are missing!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "files_missing=false" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All required files present!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check test count
+        id: test_count
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Test Count" >> $GITHUB_STEP_SUMMARY
+
+          # Run vitest with json reporter
+          npm run test:run -- --reporter=json --outputFile=test-results.json 2>/dev/null || true
+
+          if [ -f test-results.json ]; then
+            TOTAL_TESTS=$(cat test-results.json | grep -o '"numTotalTests":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            PASSED_TESTS=$(cat test-results.json | grep -o '"numPassedTests":[0-9]*' | grep -o '[0-9]*' || echo "0")
+          else
+            TOTAL_TESTS=$(npm run test:run 2>&1 | grep -oP '\d+(?= tests?)' | tail -1 || echo "0")
+            PASSED_TESTS=$TOTAL_TESTS
+          fi
+
+          echo "Total tests found: $TOTAL_TESTS" >> $GITHUB_STEP_SUMMARY
+          echo "Passed tests: $PASSED_TESTS" >> $GITHUB_STEP_SUMMARY
+
+          MIN_TESTS=20
+
+          if [ "$TOTAL_TESTS" -ge "$MIN_TESTS" ]; then
+            echo "✅ **Test count meets minimum ($TOTAL_TESTS >= $MIN_TESTS)**" >> $GITHUB_STEP_SUMMARY
+            echo "test_count_met=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ **Test count below minimum ($TOTAL_TESTS < $MIN_TESTS)**" >> $GITHUB_STEP_SUMMARY
+            echo "test_count_met=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check coverage threshold
+        id: coverage
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Code Coverage" >> $GITHUB_STEP_SUMMARY
+
+          npm run test:coverage 2>&1 | tee coverage-output.txt || true
+
+          STATEMENTS=$(grep -oP 'Statements\s*:\s*\K[\d.]+' coverage-output.txt || echo "0")
+          BRANCHES=$(grep -oP 'Branches\s*:\s*\K[\d.]+' coverage-output.txt || echo "0")
+          FUNCTIONS=$(grep -oP 'Functions\s*:\s*\K[\d.]+' coverage-output.txt || echo "0")
+          LINES=$(grep -oP 'Lines\s*:\s*\K[\d.]+' coverage-output.txt || echo "0")
+
+          echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Statements | ${STATEMENTS}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branches | ${BRANCHES}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functions | ${FUNCTIONS}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lines | ${LINES}% |" >> $GITHUB_STEP_SUMMARY
+
+          THRESHOLD=90
+
+          BELOW_THRESHOLD=false
+          for coverage in $STATEMENTS $BRANCHES $FUNCTIONS $LINES; do
+            if [ $(echo "$coverage < $THRESHOLD" | bc -l) -eq 1 ]; then
+              BELOW_THRESHOLD=true
+            fi
+          done
+
+          if [ "$BELOW_THRESHOLD" = "false" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All coverage metrics meet ${THRESHOLD}% threshold**" >> $GITHUB_STEP_SUMMARY
+            echo "coverage_met=true" >> $GITHUB_OUTPUT
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Some coverage metrics below ${THRESHOLD}% threshold**" >> $GITHUB_STEP_SUMMARY
+            echo "coverage_met=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check audit report
+        id: audit
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Audit Report Check" >> $GITHUB_STEP_SUMMARY
+
+          AUDIT_OK=true
+
+          if [ -f "src/AUDIT_REPORT.md" ]; then
+            echo "✅ Audit report file exists" >> $GITHUB_STEP_SUMMARY
+
+            # Count findings (look for "### Finding" headers)
+            FINDING_COUNT=$(grep -c "^### Finding" src/AUDIT_REPORT.md || echo "0")
+            echo "Findings documented: $FINDING_COUNT" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$FINDING_COUNT" -ge 12 ]; then
+              echo "✅ **Meets minimum of 12 findings ($FINDING_COUNT found)**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ **Below minimum of 12 findings ($FINDING_COUNT found)**" >> $GITHUB_STEP_SUMMARY
+              AUDIT_OK=false
+            fi
+
+            # Check for POUR references
+            if grep -qi "perceivable\|operable\|understandable\|robust" src/AUDIT_REPORT.md; then
+              echo "✅ POUR principles referenced" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ POUR principles not explicitly referenced" >> $GITHUB_STEP_SUMMARY
+              AUDIT_OK=false
+            fi
+
+            # Check for WCAG criterion references
+            if grep -qiE "wcag|[0-9]\.[0-9]+\.[0-9]+" src/AUDIT_REPORT.md; then
+              echo "✅ WCAG criteria referenced" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ WCAG criteria not referenced" >> $GITHUB_STEP_SUMMARY
+              AUDIT_OK=false
+            fi
+          else
+            echo "❌ Audit report file missing" >> $GITHUB_STEP_SUMMARY
+            AUDIT_OK=false
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$AUDIT_OK" = "true" ]; then
+            echo "audit_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "audit_ok=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check README content
+        id: readme
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📝 README Check" >> $GITHUB_STEP_SUMMARY
+
+          README_ISSUES=""
+
+          if grep -qi "reflection" README.md; then
+            echo "✅ Reflection section found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing reflection section" >> $GITHUB_STEP_SUMMARY
+            README_ISSUES="$README_ISSUES reflection"
+          fi
+
+          if grep -qi "key concepts\|concepts learned\|what i learned" README.md; then
+            echo "✅ Key concepts section found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing key concepts section" >> $GITHUB_STEP_SUMMARY
+            README_ISSUES="$README_ISSUES concepts"
+          fi
+
+          WORD_COUNT=$(wc -w < README.md)
+          if [ "$WORD_COUNT" -ge 200 ]; then
+            echo "✅ README has sufficient content ($WORD_COUNT words)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ README may be too short ($WORD_COUNT words, aim for 200+)" >> $GITHUB_STEP_SUMMARY
+            README_ISSUES="$README_ISSUES length"
+          fi
+
+          if grep -qi "name:\|author:\|by:" README.md; then
+            echo "✅ Student name appears to be present" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Student name may be missing" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -z "$README_ISSUES" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **README meets requirements**" >> $GITHUB_STEP_SUMMARY
+            echo "readme_complete=true" >> $GITHUB_OUTPUT
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **README may need improvement**" >> $GITHUB_STEP_SUMMARY
+            echo "readme_complete=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check accessibility fixes in components
+        id: a11y_fixes
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ♿ Accessibility Fix Checks" >> $GITHUB_STEP_SUMMARY
+
+          A11Y_OK=true
+
+          # EventCard checks
+          echo "### EventCard" >> $GITHUB_STEP_SUMMARY
+          if grep -q 'alt=' src/components/EventCard.tsx; then
+            echo "✅ Image has alt attribute" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Image missing alt attribute" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -qE '<h[2-6]' src/components/EventCard.tsx; then
+            echo "✅ Uses heading element for title" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Still using <b> instead of heading for title" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -q '<button' src/components/EventCard.tsx; then
+            echo "✅ Uses <button> element for register" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Still using <div> instead of <button> for register" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          # EventFilter checks
+          echo "### EventFilter" >> $GITHUB_STEP_SUMMARY
+          if grep -q '<button' src/components/EventFilter.tsx; then
+            echo "✅ Uses <button> elements for filters" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Still using <div> instead of <button> for filters" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -q 'aria-pressed' src/components/EventFilter.tsx; then
+            echo "✅ Uses aria-pressed for selected state" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing aria-pressed for selected state" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          # RegistrationForm checks
+          echo "### RegistrationForm" >> $GITHUB_STEP_SUMMARY
+          if grep -q '<label' src/components/RegistrationForm.tsx; then
+            echo "✅ Uses <label> elements" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing <label> elements" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -q '<form' src/components/RegistrationForm.tsx; then
+            echo "✅ Uses <form> element" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing <form> element" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -q 'role="dialog"\|role=.dialog.' src/components/RegistrationForm.tsx; then
+            echo "✅ Dialog has role='dialog'" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing role='dialog'" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          # EventsPage checks
+          echo "### EventsPage" >> $GITHUB_STEP_SUMMARY
+          if grep -q '<main' src/components/EventsPage.tsx; then
+            echo "✅ Uses <main> landmark" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing <main> landmark" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          if grep -q '<h1' src/components/EventsPage.tsx; then
+            echo "✅ Uses <h1> for page title" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Missing <h1> for page title" >> $GITHUB_STEP_SUMMARY
+            A11Y_OK=false
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$A11Y_OK" = "true" ]; then
+            echo "✅ **All checked accessibility fixes present**" >> $GITHUB_STEP_SUMMARY
+            echo "a11y_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ **Some accessibility fixes still needed**" >> $GITHUB_STEP_SUMMARY
+            echo "a11y_ok=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate grading summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Grading Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Criteria | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # Integrity check result (from upstream job)
+          if [ "${{ needs.integrity-check.result }}" = "success" ]; then
+            echo "| 🔒 Template Integrity | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 🔒 Template Integrity | ❌ **Protected files modified** |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.files.outputs.files_missing }}" = "false" ]; then
+            echo "| Required Files | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Required Files | ❌ Missing files |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.test.result }}" = "success" ]; then
+            echo "| Tests & TypeScript | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Tests & TypeScript | ❌ Failures |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.test_count.outputs.test_count_met }}" = "true" ]; then
+            echo "| Minimum Tests (20) | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Minimum Tests (20) | ❌ Below minimum |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.coverage.outputs.coverage_met }}" = "true" ]; then
+            echo "| Coverage (90%) | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Coverage (90%) | ⚠️ Below threshold |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.audit.outputs.audit_ok }}" = "true" ]; then
+            echo "| Audit Report (12+ findings) | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Audit Report (12+ findings) | ⚠️ Needs review |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.a11y_fixes.outputs.a11y_ok }}" = "true" ]; then
+            echo "| Accessibility Fixes | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Accessibility Fixes | ⚠️ Incomplete |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.readme.outputs.readme_complete }}" = "true" ]; then
+            echo "| README Complete | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| README Complete | ⚠️ Needs review |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Note: This is an automated check. Manual review of audit report quality, fix completeness, and reflection depth will also be performed.*" >> $GITHUB_STEP_SUMMARY
