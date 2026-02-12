@@ -1,6 +1,6 @@
-# Lab 5: Accessibility Audit & Fixes
+# Lab 8: Accessibility Audit & Fixes
 
-### Week 6 | UI Design II — Accessibility
+### Week 9 | UI Design II — Accessibility
 
 ## Overview
 
@@ -36,7 +36,7 @@ By the end of this lab, you will be able to:
 
 ## Connection to Readings
 
-This lab directly applies concepts from your Week 5 readings:
+This lab revisits concepts from your Week 5 readings:
 
 ### From "Introduction to Web Accessibility" (WebAIM)
 - **Why accessibility matters:** WebAIM explains that accessibility means "people with disabilities can equally perceive, understand, navigate, and interact with websites." In this lab, you'll discover firsthand how inaccessible code creates barriers — missing alt text means screen reader users get no information about images, missing labels mean form fields are unusable without a mouse.
@@ -58,8 +58,8 @@ This lab directly applies concepts from your Week 5 readings:
 After accepting the GitHub Classroom assignment, clone your repository and install dependencies:
 
 ```bash
-git clone https://github.com/ClarkCollege-CSE-SoftwareEngineering/lab-5-accessibility-audit-YOURUSERNAME.git
-cd lab-5-accessibility-audit-YOURUSERNAME
+git clone https://github.com/ClarkCollege-CSE-SoftwareEngineering/lab-8-accessibility-audit-YOURUSERNAME.git
+cd lab-8-accessibility-audit-YOURUSERNAME
 npm install
 ```
 
@@ -1105,7 +1105,7 @@ describe('EventsPage', () => {
 Your submission should include:
 
 ```
-lab-5-accessibility-audit-YOURUSERNAME/
+lab-8-accessibility-audit-YOURUSERNAME/
 ├── src/
 │   ├── components/
 │   │   ├── EventCard.tsx          (fixed version)
