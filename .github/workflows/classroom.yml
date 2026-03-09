@@ -1,0 +1,128 @@
+name: Autograding Tests
+'on':
+- push
+- repository_dispatch
+permissions:
+  checks: write
+  actions: read
+  contents: read
+jobs:
+  run-autograding-tests:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-classroom[bot]'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: 'Fixes: EventCard'
+      id: fixes-eventcard
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Fixes: EventCard'
+        setup-command: npm ci
+        command: grep -q 'alt=' src/components/EventCard.tsx && grep -qE '<h[2-6]'
+          src/components/EventCard.tsx && grep -q '<button' src/components/EventCard.tsx
+        timeout: 1
+        max-score: 8
+    - name: 'Fixes: EventFilter'
+      id: fixes-eventfilter
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Fixes: EventFilter'
+        setup-command: ''
+        command: grep -q '<button' src/components/EventFilter.tsx && grep -q 'aria-pressed'
+          src/components/EventFilter.tsx
+        timeout: 1
+        max-score: 5
+    - name: 'Fixes: RegistrationForm'
+      id: fixes-registrationform
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Fixes: RegistrationForm'
+        setup-command: ''
+        command: grep -q '<label' src/components/RegistrationForm.tsx && grep -q '<form'
+          src/components/RegistrationForm.tsx && grep -q 'role="dialog"|role=.dialog.'
+          src/components/RegistrationForm.tsx
+        timeout: 1
+        max-score: 8
+    - name: 'Fixes: EventsPage'
+      id: fixes-eventspage
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Fixes: EventsPage'
+        setup-command: ''
+        command: grep -q '<main' src/components/EventsPage.tsx && grep -q '<h1' src/components/EventsPage.tsx
+        timeout: 1
+        max-score: 5
+    - name: 'Audit: Report structure'
+      id: audit-report-structure
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Audit: Report structure'
+        setup-command: ''
+        command: test -f src/AUDIT_REPORT.md && test $(grep -c "^### Finding" src/AUDIT_REPORT.md)
+          -ge 12 && grep -qi "perceivable|operable|understandable|robust" src/AUDIT_REPORT.md
+          && grep -qiE "wcag|[0-9]\.[0-9]+\.[0-9]+" src/AUDIT_REPORT.md
+        timeout: 1
+        max-score: 10
+    - name: 'Tests: All pass'
+      id: tests-all-pass
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Tests: All pass'
+        setup-command: npm ci
+        command: npm run test:run
+        timeout: 5
+        max-score: 20
+    - name: 'Student Tests: Minimum count'
+      id: student-tests-minimum-count
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Student Tests: Minimum count'
+        setup-command: npm ci
+        command: test $(npm run test:run -- --reporter=json 2>/dev/null | grep -o
+          '"numTotalTests":[0-9]*' | grep -o '[0-9]*') -ge 20
+        timeout: 5
+        max-score: 5
+    - name: 'README: Required sections'
+      id: readme-required-sections
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'README: Required sections'
+        setup-command: ''
+        command: grep -qi "reflection" README.md && grep -qi "key concepts|concepts
+          learned|what i learned" README.md && test $(wc -w < README.md) -ge 200
+        timeout: 1
+        max-score: 5
+    - name: 'Quality: TypeScript compiles'
+      id: quality-typescript-compiles
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Quality: TypeScript compiles'
+        setup-command: npm ci
+        command: npm run typecheck
+        timeout: 5
+        max-score: 5
+    - name: 'Quality: Coverage ≥ 90%'
+      id: quality-coverage-90
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: 'Quality: Coverage ≥ 90%'
+        setup-command: npm ci
+        command: npm run test:coverage
+        timeout: 5
+        max-score: 5
+    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+        FIXES-EVENTCARD_RESULTS: "${{steps.fixes-eventcard.outputs.result}}"
+        FIXES-EVENTFILTER_RESULTS: "${{steps.fixes-eventfilter.outputs.result}}"
+        FIXES-REGISTRATIONFORM_RESULTS: "${{steps.fixes-registrationform.outputs.result}}"
+        FIXES-EVENTSPAGE_RESULTS: "${{steps.fixes-eventspage.outputs.result}}"
+        AUDIT-REPORT-STRUCTURE_RESULTS: "${{steps.audit-report-structure.outputs.result}}"
+        TESTS-ALL-PASS_RESULTS: "${{steps.tests-all-pass.outputs.result}}"
+        STUDENT-TESTS-MINIMUM-COUNT_RESULTS: "${{steps.student-tests-minimum-count.outputs.result}}"
+        README-REQUIRED-SECTIONS_RESULTS: "${{steps.readme-required-sections.outputs.result}}"
+        QUALITY-TYPESCRIPT-COMPILES_RESULTS: "${{steps.quality-typescript-compiles.outputs.result}}"
+        QUALITY-COVERAGE-90_RESULTS: "${{steps.quality-coverage-90.outputs.result}}"
+      with:
+        runners: fixes-eventcard,fixes-eventfilter,fixes-registrationform,fixes-eventspage,audit-report-structure,tests-all-pass,student-tests-minimum-count,readme-required-sections,quality-typescript-compiles,quality-coverage-90
