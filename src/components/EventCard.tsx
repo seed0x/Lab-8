@@ -32,6 +32,7 @@ export function EventCard({ event, onRegister }: EventCardProps) {
         <span style={{ color: '#f7f7f7', fontSize: '14px' }}>
           {event.date} | {event.time}
         </span>
+        </span>
 
         <p style={{ marginTop: '8px' }}>{event.description}</p>
 
